@@ -138,10 +138,12 @@ async function getAllTweetsByUser(userId: string, lastKnownTweetId: string | nul
         });
 
         const json: TimeLineResponse = await response.json();
-        //console.log(json);
+        console.log(json);
         // tweets.concat(json.data);
 
-        tweets = [...tweets, ...json.data];
+        if (json.data) {
+            tweets = [...tweets, ...json.data];
+        }
 
         if (json.meta.next_token) {
             paginationToken = json.meta.next_token;
@@ -155,7 +157,6 @@ async function getAllTweetsByUser(userId: string, lastKnownTweetId: string | nul
 
 async function main() {
     const hightestTweetId = await getHighestTweetId();
-
 
     // get twitter user information
     const userInformation = await getUserInformation();
@@ -182,7 +183,7 @@ async function main() {
                 body: JSON.stringify(sentimentRequestBody)
             });
 
-        console.log("Sentiment response: " + JSON.stringify(response));
+        // console.log("Sentiment response: " + JSON.stringify(response));
 
         // @ts-ignore
         const sentimentResponseBody: SentimentResponseBody = await response.json();
