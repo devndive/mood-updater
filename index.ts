@@ -1,4 +1,3 @@
-import { CosmosClient } from "@azure/cosmos";
 import chunk from "lodash/fp/chunk";
 import dotenv from "dotenv"
 dotenv.config();
@@ -58,20 +57,15 @@ type SentimentResponseBody = {
 type TweetWithSentiment = {
     id: string,
     text: string,
-    type: string,
 
     sentiment: Sentiment
 }
 
-const cosmosClient = new CosmosClient({
-    endpoint: process.env.COSMOS_DB_ENDPOINT || "",
-    key: process.env.COSMOS_DB_KEY,
-});
-
 async function getUserInformation(): Promise<UserInformation> {
     console.log("Getting user information");
     const response = await fetch("https://api.twitter.com/2/users/by/username/devndive",
-        { headers: {
+        {
+            headers: {
                 "Authorization": "Bearer " + process.env.TWITTER_BEARER_TOKEN
             }
         });
@@ -84,28 +78,17 @@ async function getUserInformation(): Promise<UserInformation> {
 
 async function getHighestTweetId(): Promise<string | null> {
     console.log("Getting highest tweet id");
-    const querySpec = {
-        query: "SELECT t.id FROM tweets t WHERE t.type = @type ORDER BY t.id DESC OFFSET 0 LIMIT 1",
-        parameters: [
-            {
-                name: "@type",
-                value: "tweet"
-            }
-        ]
-    };
+    const lastKnownTweetResponse = await fetch(`${process.env.SENTIMENT_BACKEND}/last-known-tweet`);
 
-    const response = await cosmosClient
-        .database('mood')
-        .container('tweets')
-        .items.query(querySpec).fetchAll();
-
-    if (response.resources.length > 0) {
-        console.log("Highest tweet id: " + response.resources[0].id);
-        return response.resources[0].id;
+    if (lastKnownTweetResponse.status === 200) {
+        const { data } = await lastKnownTweetResponse.json();
+        console.log("lastKnownTweet: " + JSON.stringify(data.id));
+        console.log("Highest tweet id: " + data.id);
+        return data.id;
+    } else {
+        console.log("No tweets found");
+        return null;
     }
-
-    console.log("No tweets found");
-    return null;
 }
 
 async function getAllTweetsByUser(userId: string, lastKnownTweetId: string | null): Promise<Tweet[]> {
@@ -114,7 +97,7 @@ async function getAllTweetsByUser(userId: string, lastKnownTweetId: string | nul
     let tweets: Tweet[] = [];
     let paginationToken = null;
 
-    do  {
+    do {
         const searchParams = new URLSearchParams();
         searchParams.append("max_results", "100");
         searchParams.append("exclude", "replies,retweets");
@@ -139,7 +122,6 @@ async function getAllTweetsByUser(userId: string, lastKnownTweetId: string | nul
 
         const json: TimeLineResponse = await response.json();
         console.log(json);
-        // tweets.concat(json.data);
 
         if (json.data) {
             tweets = [...tweets, ...json.data];
@@ -175,15 +157,12 @@ async function main() {
         const response = await fetch("https://mood-analyzer.cognitiveservices.azure.com/text/analytics/v3.2-preview.1/sentiment",
             {
                 method: "POST",
-                // @ts-ignore
                 headers: {
-                    "Ocp-Apim-Subscription-Key": process.env.COGNITIVE_SERVICE_KEY,
+                    "Ocp-Apim-Subscription-Key": process.env.COGNITIVE_SERVICE_KEY!,
                     "Content-Type": "application/json"
                 },
                 body: JSON.stringify(sentimentRequestBody)
             });
-
-        // console.log("Sentiment response: " + JSON.stringify(response));
 
         // @ts-ignore
         const sentimentResponseBody: SentimentResponseBody = await response.json();
@@ -196,14 +175,18 @@ async function main() {
                     const tweetWithSentiment: TweetWithSentiment = {
                         id: sentiment.id,
                         text: tweet.text,
-                        type: "tweet",
                         sentiment: sentiment
                     };
 
-                    await cosmosClient
-                        .database('mood')
-                        .container('tweets')
-                        .items.upsert(tweetWithSentiment);
+                    const response = await fetch(`${process.env.SENTIMENT_BACKEND}/sentiment`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ data: [tweetWithSentiment] }),
+                    });
+                    
+                    console.log("Response:", JSON.stringify(response));
                 }
             }
         }
