@@ -154,7 +154,7 @@ async function main() {
         };
 
         console.log("Getting sentiment for " + c.length + " tweets");
-        const response = await fetch("https://mood-analyzer.cognitiveservices.azure.com/text/analytics/v3.2-preview.1/sentiment",
+        const response = await fetch(`${process.env.COGNITIVE_SERVICE_URL}`,
             {
                 method: "POST",
                 headers: {
